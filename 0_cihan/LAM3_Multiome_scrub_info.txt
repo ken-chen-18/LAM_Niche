@@ -1,0 +1,6 @@
+Automatically set threshold at doublet score = 0.12
+Detected doublet rate = 13.9%
+Estimated detectable doublet fraction = 54.3%
+Overall doublet rate:
+	Expected   = 5.0%
+	Estimated  = 25.6%

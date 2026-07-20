@@ -1,0 +1,81 @@
+Inherited objects:
+LAM.combined.rds (from Cheng Jiang)
+
+raw data files:
+- LAM1_scRNA: X:\mg\LAM.hg38\PBX1_paper\LAM1\10X_LAM\raw_feature_bc_matrix.h5
+- LAM3_scRNA: X:\mg\LAM.hg38\PBX1_paper\LAM3\10X_LAM3_3hg\raw_feature_bc_matrix.h5
+- LAM18_scRNA: X:\mg\LAM.hg38\PBX1_paper\LAM18_scRNA\10X-McCormack-LAM-Feb18-2020-20200219-3v3hg\raw_feature_bc_matrix.h5
+- LAM32_scRNA: X:\mg\LAM.hg38\PBX1_paper\LAM32_scRNA\10X-Whitsett-Donor-32-LAM-Lung-20200829-3v3-1hg\raw_feature_bc_matrix.h5
+- LAM3_Multiome: X:\10x\LAM\Multiome\LAM3\raw_feature_bc_matrix.h5
+- LAM50_Multiome: X:\10x\LAM\Multiome\LAM50\raw_feature_bc_matrix.h5
+- LAM32_Multiome: X:\10x\LAM\Multiome\LAM32\10X-Xu-LAM-32-20210715-Multiv1\raw_feature_bc_matrix.h5
+- LAM44_Multiome: X:\10x\LAM\Multiome\Donor44\10X-Xu-Donor-44-LAM-Lung-20210402-Multiv1\raw_feature_bc_matrix.h5
+- LAM_UPENN_scRNA_rep1: GSM4143260
+- LAM_UPENN_scRNA_rep2: GSM4143261
+- LAM1158_scRNA: X:\raw\LAM\BWH\data\LAM1158
+- LAM1163_scRNA: X:\raw\LAM\BWH\LAM1163
+- LAM1164_scRNA: X:\raw\LAM\BWH\LAM1164
+- uterus: X:\10x\LAM\uterus_nuclei\LAM_uterus_hg38\10X-McCormack-LAM-Uterus-Nuclei-20190502-3v3hg_premrna
+
+The steps:
+1) run 1_scrub.py to determine scrublets in LAM in LAM3_Multiome and LAM50_Multiome. The resulting data is saved to saved_info folder.
+2) run 2_qc_pipe.R to preprocess LAM3_Multiome and LAM50_Multiome. There are 3 sets of parameters for this scripts.
+These 3 sets of parameters are imported from aux_data/run_parameters.csv
+	QC subset thresholds: inherited from LAM.combined.rds
+	SoupX contamination rate: Ran SoupX tutorial from common tools to investigate the appropriate ratio. Both ratio is slightly higher than auto estimated ratio.
+	Doublet Prediction Score: Used auto estimated score by Scrublet.
+Pre-processed single cell objects are saved to saved_objects as rds files.
+3) run 3_integrate_rpca.R to integrate LAM.combined.rds and LAM3_Multiome and LAM50_Multiome. The resulting object is saved to saved_objects/lam_integrate_rpca.rds
+Notes: 
+	LAM.combined.rds object is split into samples using SplitSeuratObject function and a new Seurat object is created using counts in RNA assays.
+	The internal data samples containes SoupX corrected RNA assay counts whereas outside samples containes raw counts. This difference is adressed in lam_combine.R script
+before any further downstream analysis. 
+	Before the integration each sample is automatically annotated with cellref and cellref_seed using lineage_level1 and celltype_level3 to help with manual annotation later on.
+	Rpca integration is used from Seurat package.
+	Integration is done over SCT assay using SCT normalization parameters.
+	The integration pipeline is adjusted from Seurat vignettes.
+	The resulting object is saved to saved_objects folder.
+4) 4_reclustering.R file extrancts raw counts of Mesenchymal cells and reintegrates using Harmony. 
+	Main reason to use Harmony instead of seurat is that it seems to perform better on small number of cells and some celltypes has low cell numbers in this subset.
+	This code also runs another clustering and umap using harmony corrected pca. Then these clusters are used to label LAMCORE subtypes whereas other mesenchymal cell are labeled using the original clustering.
+	Resulting object that only contains mesenchymal cells is saved to saved_objects/mesh_reclustering.rds
+	This file also reclusters all Dentric cells and clusters 58 and 61 which contains endothelial cells which wasn't clearly split into celltypes during the original clustering.
+	Dentric cells are dropped from the analysis with other immune cells hence it doesn't matter but reclustering of of cluster 58 and 61 is used for annotation instead of the original clusters.
+	The resulting object is saved to saved_objects folder.
+5) 5_lam_combine.R file takes annotated and integrated object which contains SoupX assays (for internal samples) and renames this assay as SoupX (and SCT assay as SoupX_SCT).
+	It also reimports the raw data from the original sources and creates a new RNA assay an SCT assay to use in the downstream.
+	The resulting object is saved to saved_objects folder.
+6) 6_lam_annotations cleans up the objects and adds proper annotations that are obtained in the previous steps. This code saves the result to saved_objects/lam_lung.rds.
+	However this object is later recreated by Ken since he completed the LAMCORE subtypes reclustering, and that intergrated object we used for the downstream is "X:/Ken/LAM_2023/uterus_lung/lam_lung.rds"
+	Latest annotations are saved to celltype_090523 meta_data column.
+	The resulting object is saved to saved_objects folder.
+7) To get control cells the following code can be used:
+	ctrl_all = readRDS("X:/Cheng/Projects/3.Cellref_revision/.Data/Cellref/LungMAP_HumanLung_CellRef.v1.1.rds")
+	cellref_samples_meta = read.csv("X:/cakar/2023_LAM/aux_data/cellref_samples_updated.csv")
+	ctrl = subset(ctrl_all,Dataset !="GSE136831" & 
+                DataID %in% cellref_samples_meta[cellref_samples_meta$Age<=72 &
+                            cellref_samples_meta$Age>=51 &
+                            cellref_samples_meta$Gender=="F"& 
+                            cellref_samples_meta$Region == "Parenchyma", "DataID"])
+	ctrl$celltype_level3 = ifelse(ctrl$celltype_level3 %in% c("ASMC", "VSMC"), "SMC", ctrl$celltype_level3)
+8) session_info folder contains session info for each R runs. This is important since not all of the code will run with different versions. 
+	For example, 5_lam_combine.R will not run any Seurat version other than 4.3.0 and SeuratObject version 4.1.3.
+	There might be similar dependency issues.
+Another important example related to versions is the SLICE package. In every analysis in X:/cakar folder, SLICE version from X:/cakar/r-lib is used which is the same as the latest commit to SLICE library on Github
+for any functionality related to entropy computation. 
+
+Additional analysis methods:
+
+Cell Cell Communication:
+For each method in cci we used ligand-receptor pairs database from Yixin which is a curation of a couple database and related literature. The related file is in 2023_LAM/lrdbs folder.
+In order to discover significant communications between celltypes in LAM and control samples we used CellChat (v1.6.1) and NATMI libraries.In both cases we followed the standard pipeline and parameters for these two libraries.
+For CellChat this includes:
+1) Designating differentially expressed genes.
+2) Assignning a probability to each source-target and ligand-receptor pairs a probability using the method described in https://www.nature.com/articles/s41467-021-21246-9
+3) Then these communications are aggregated into a communication net using trimean where each source-target has a communication weight.
+For NATMI:
+1) ExtractEdges.py script from https://github.com/forrest-lab/NATMI to determine the statistics of ligand-receptor pairs for each source-target celltype pairs.
+
+Once significant ccis are determined using these methods extra information (such as if ligand is deg etc.) are added to the table and saved into 2023_LAM folder.
+There are 3 excel files; one for CellChat, one for NATMI, and one for filtered NATMI. The details of extra information in these tables are in explained in the second sheet of each file.
+Main file that is used downstream is natmi_results_short with a few addition from natmi_results. Manual curations of communications can be found in 2023_LAM/analysis_code/selected_communications.

@@ -1,0 +1,9 @@
+*.rds
+*.RData
+*.h5ad
+*.h5Seurat
+
+input/
+old/
+
+5_regulon/reg_results/
